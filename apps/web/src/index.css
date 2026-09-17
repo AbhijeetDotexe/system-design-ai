@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Comfortable Dark Theme (Default) */
+:root {
+  --background: 224 71% 4%;
+  --foreground: 213 31% 91%;
+  --card: 224 71% 7%;
+  --card-foreground: 213 31% 91%;
+  --border: 216 34% 17%;
+  --primary: 239 84% 67%;
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 239 84% 72%;
+  --secondary: 222 47% 11%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 223 47% 11%;
+  --muted-foreground: 215 20% 65%;
+  --accent: 216 34% 17%;
+  --accent-foreground: 210 40% 98%;
+
+  --canvas-bg: #0a0c10;
+  --panel-bg: #0d1117;
+  --card-bg: #0f131a;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --grid-dot: rgba(255, 255, 255, 0.08);
+}
+
+/* Comfortable, Soft Ergonomic Light Theme */
+.light {
+  --background: 220 14% 96%;        /* #F4F5F7 Application background */
+  --foreground: 220 14% 15%;        /* #20242A Dark charcoal */
+  --card: 220 13% 98%;              /* #F7F8FA Cards & floating panels */
+  --card-foreground: 220 14% 15%;
+  --border: 220 11% 86%;            /* #D7DAE0 Soft borders */
+  --primary: 239 84% 62%;
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 239 84% 56%;
+  --secondary: 220 12% 94%;         /* #EEF0F3 Sidebars */
+  --secondary-foreground: 220 14% 15%;
+  --muted: 220 12% 94%;
+  --muted-foreground: 218 8% 42%;   /* #626873 Secondary text */
+  --accent: 220 14% 92%;
+  --accent-foreground: 220 14% 15%;
+
+  --canvas-bg: #F8F9FA;
+  --panel-bg: #EEF0F3;
+  --card-bg: #F7F8FA;
+  --border-color: #D7DAE0;
+  --text-main: #20242A;
+  --text-muted: #626873;
+  --grid-dot: rgba(32, 36, 42, 0.07);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+  overflow-x: hidden;
+  background-color: var(--canvas-bg);
+  color: var(--text-main);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(140, 150, 170, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 150, 170, 0.45);
+}
+
+/* Subtle dot grid for diagram canvas */
+.canvas-grid-pattern {
+  background-size: 24px 24px;
+  background-image: radial-gradient(circle, var(--grid-dot) 1.2px, transparent 1.2px);
+  background-color: var(--canvas-bg);
+}
+
+/* Selection and resize handle styles */
+.resize-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background-color: #ffffff;
+  border: 1.5px solid #6366f1;
+  border-radius: 2px;
+  z-index: 30;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+.resize-handle:hover {
+  background-color: #6366f1;
+  transform: scale(1.3);
+}
+
+.light .resize-handle {
+  background-color: #ffffff;
+  border: 1.5px solid #4f46e5;
+}
