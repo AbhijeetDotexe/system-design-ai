@@ -13,6 +13,9 @@ import { errorHandler } from "./middleware/errorHandler.js";
 
 export const app = express();
 
+// Trust proxy for Nginx / reverse proxy deployment
+app.set("trust proxy", 1);
+
 // Security headers
 app.use(
   helmet({
@@ -58,6 +61,7 @@ if (ENV.NODE_ENV !== "test") {
 const aiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 30,
+  validate: { xForwardedForHeader: false },
   message: {
     success: false,
     error: {
