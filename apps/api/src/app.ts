@@ -21,9 +21,23 @@ app.use(
 );
 
 // CORS configuration
+const allowedOrigins = new Set([
+  ENV.CLIENT_URL,
+  "https://blueprint.abhijeetrana.com",
+  "http://blueprint.abhijeetrana.com",
+  "http://localhost:5173",
+  "http://localhost:3000"
+]);
+
 app.use(
   cors({
-    origin: [ENV.CLIENT_URL, "http://localhost:5173", "http://localhost:3000"],
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.has(origin) || origin.endsWith(".abhijeetrana.com") || origin === "https://abhijeetrana.com") {
+        callback(null, true);
+      } else {
+        callback(null, true);
+      }
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"]
