@@ -26,13 +26,21 @@ export class GeminiService {
   private keyIndex = 0;
 
   constructor() {
+    if (ENV.OPENROUTER_API_KEY && ENV.OPENROUTER_API_KEY.length > 10) {
+      logger.info(`[AiService] Initialized OpenRouter provider with models: ${ENV.OPENROUTER_MODELS.slice(0, 3).join(", ")}`);
+    }
     const keys = ENV.GEMINI_API_KEYS.filter(k => k && k.length > 10);
     if (keys.length > 0) {
       this.clients = keys.map(k => new GoogleGenAI({ apiKey: k }));
-      logger.info(`[GeminiService] Initialized ${this.clients.length} client(s) with model: ${ENV.GEMINI_MODEL}`);
-    } else {
-      logger.warn("[GeminiService] No GEMINI_API_KEY configured. Fallback mode active.");
+      logger.info(`[GeminiService] Initialized ${this.clients.length} Gemini client(s) with model: ${ENV.GEMINI_MODEL}`);
     }
+    if (!this.hasAiProvider()) {
+      logger.warn("[AiService] No AI API keys configured. Intelligent heuristic fallback mode active.");
+    }
+  }
+
+  private hasAiProvider(): boolean {
+    return (!!ENV.OPENROUTER_API_KEY && ENV.OPENROUTER_API_KEY.length > 10) || this.clients.length > 0;
   }
 
   private getNextClient(): GoogleGenAI | null {
@@ -42,41 +50,86 @@ export class GeminiService {
     return client;
   }
 
+  private async callOpenRouter(promptText: string): Promise<string> {
+    const models = ENV.OPENROUTER_MODELS.slice(0, 3);
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${ENV.OPENROUTER_API_KEY}`,
+        "HTTP-Referer": ENV.CLIENT_URL || "https://blueprint.abhijeetrana.com",
+        "X-Title": "Blueprint AI",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        models,
+        messages: [{ role: "user", content: promptText }],
+        temperature: 0.2
+      })
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`OpenRouter HTTP ${res.status}: ${errText}`);
+    }
+
+    const json: any = await res.json();
+    return json?.choices?.[0]?.message?.content || "";
+  }
+
   /**
-   * Helper to execute Gemini model calls with retry on 503 transient spike
-   * Rotates through API keys on each attempt
+   * Helper to execute AI model calls with retry.
+   * Uses OpenRouter if configured, falling back to Gemini and retry rotations.
    */
   private async executeWithRetry(
     promptText: string,
     retries = 2,
     delayMs = 1500
   ): Promise<string> {
-    if (this.clients.length === 0) {
-      throw new Error("No Gemini clients configured");
-    }
-
-    for (let attempt = 1; attempt <= retries + 1; attempt++) {
-      const client = this.getNextClient();
-      if (!client) throw new Error("No Gemini clients available");
-
-      try {
-        const response = await client.models.generateContent({
-          model: ENV.GEMINI_MODEL,
-          contents: promptText
-        });
-        return response.text || "";
-      } catch (err: any) {
-        const is503 = err?.status === 503 || err?.message?.includes("503") || err?.message?.includes("UNAVAILABLE");
-        const is429 = err?.status === 429 || err?.message?.includes("429") || err?.message?.includes("quota");
-        if ((is503 || is429) && attempt <= retries) {
-          logger.warn(`[GeminiService] Transient ${is503 ? 503 : 429} from Gemini on attempt ${attempt} (key ${this.keyIndex}). Retrying in ${delayMs}ms...`);
-          await new Promise((r) => setTimeout(r, delayMs * attempt));
-          continue;
+    // 1. Try OpenRouter if key is present
+    if (ENV.OPENROUTER_API_KEY && ENV.OPENROUTER_API_KEY.length > 10) {
+      for (let attempt = 1; attempt <= retries + 1; attempt++) {
+        try {
+          const content = await this.callOpenRouter(promptText);
+          if (content && content.trim()) {
+            return content;
+          }
+        } catch (err: any) {
+          logger.warn(`[AiService] OpenRouter attempt ${attempt} failed: ${err.message}`);
+          if (attempt <= retries) {
+            await new Promise((r) => setTimeout(r, delayMs * attempt));
+            continue;
+          }
+          logger.error("[AiService] All OpenRouter retries failed, falling back to Gemini if configured");
         }
-        throw err;
       }
     }
-    return "";
+
+    // 2. Fallback to Gemini if clients are available
+    if (this.clients.length > 0) {
+      for (let attempt = 1; attempt <= retries + 1; attempt++) {
+        const client = this.getNextClient();
+        if (!client) break;
+
+        try {
+          const response = await client.models.generateContent({
+            model: ENV.GEMINI_MODEL,
+            contents: promptText
+          });
+          return response.text || "";
+        } catch (err: any) {
+          const is503 = err?.status === 503 || err?.message?.includes("503") || err?.message?.includes("UNAVAILABLE");
+          const is429 = err?.status === 429 || err?.message?.includes("429") || err?.message?.includes("quota");
+          if ((is503 || is429) && attempt <= retries) {
+            logger.warn(`[GeminiService] Transient ${is503 ? 503 : 429} from Gemini on attempt ${attempt}. Retrying in ${delayMs}ms...`);
+            await new Promise((r) => setTimeout(r, delayMs * attempt));
+            continue;
+          }
+          if (attempt > retries) throw err;
+        }
+      }
+    }
+
+    throw new Error("No AI providers available or all attempts failed");
   }
 
   /**
@@ -89,7 +142,7 @@ export class GeminiService {
     const budget = DETAIL_BUDGETS[detail ?? "standard"] ?? DETAIL_BUDGETS.standard;
     let rawJsonText = "";
 
-    if (this.clients.length > 0) {
+    if (this.hasAiProvider()) {
       try {
         const systemPrompt = SYSTEM_DESIGN_ARCHITECT_PROMPT
           .replaceAll("{{MAX_NODES}}", String(budget.maxNodes))
@@ -97,7 +150,7 @@ export class GeminiService {
         const fullPrompt = `${systemPrompt}\n\nUser Request: ${prompt}\n\nGenerate the system architecture JSON:`;
         rawJsonText = await this.executeWithRetry(fullPrompt);
       } catch (err) {
-        logger.error("[GeminiService] Gemini API call failed, falling back to intelligent heuristics:", err);
+        logger.error("[AiService] AI generation call failed, falling back to intelligent heuristics:", err);
         rawJsonText = this.generateIntelligentFallback(prompt, detail);
       }
     } else {
@@ -151,7 +204,7 @@ export class GeminiService {
 
     let rawJsonText = "";
 
-    if (this.clients.length > 0) {
+    if (this.hasAiProvider()) {
       try {
         const diagramSummary = JSON.stringify({
           title: currentDiagram.title,
@@ -299,7 +352,7 @@ export class GeminiService {
 
     let rawJsonText = "";
 
-    if (this.clients.length > 0) {
+    if (this.hasAiProvider()) {
       try {
         const diagramSummary = JSON.stringify({
           title: currentDiagram.title,
@@ -357,15 +410,19 @@ export class GeminiService {
 
   private safeParseAndValidate(jsonText: string, fallbackTitle: string): AiDiagramResponse {
     let cleaned = jsonText.trim();
-    if (cleaned.startsWith("```json")) {
-      cleaned = cleaned.slice(7);
-    } else if (cleaned.startsWith("```")) {
-      cleaned = cleaned.slice(3);
+
+    // Strip markdown code fences if present
+    const codeBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (codeBlockMatch) {
+      cleaned = codeBlockMatch[1].trim();
+    } else {
+      // Extract between outermost JSON braces
+      const firstBrace = cleaned.indexOf("{");
+      const lastBrace = cleaned.lastIndexOf("}");
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleaned = cleaned.slice(firstBrace, lastBrace + 1).trim();
+      }
     }
-    if (cleaned.endsWith("```")) {
-      cleaned = cleaned.slice(0, -3);
-    }
-    cleaned = cleaned.trim();
 
     try {
       const parsed = JSON.parse(cleaned);
@@ -373,7 +430,7 @@ export class GeminiService {
       if (validated.success) {
         return validated.data;
       }
-      logger.warn("[GeminiService] Zod validation issues in AI response, sanitizing:", validated.error.format());
+      logger.warn("[AiService] Zod validation issues in AI response, sanitizing:", validated.error.format());
 
       return {
         title: parsed.title || fallbackTitle || "System Architecture",
@@ -382,7 +439,7 @@ export class GeminiService {
         edges: Array.isArray(parsed.edges) ? parsed.edges : []
       };
     } catch (parseError) {
-      logger.error("[GeminiService] JSON parse error on AI response:", parseError, cleaned);
+      logger.error("[AiService] JSON parse error on AI response:", parseError, cleaned);
       throw new Error("Failed to parse AI response into structured architecture JSON");
     }
   }
@@ -584,7 +641,7 @@ export class GeminiService {
   async summarizeDiagram(currentDiagram: DiagramDocument): Promise<string> {
     logger.info(`[GeminiService] Summarizing diagram: "${currentDiagram.title}"`);
 
-    if (this.clients.length === 0) {
+    if (!this.hasAiProvider()) {
       return this.fallbackSummary(currentDiagram);
     }
 

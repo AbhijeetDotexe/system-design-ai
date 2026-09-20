@@ -23,6 +23,8 @@ export const ENV = {
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "7d",
   GEMINI_API_KEYS: parseApiKeys(),
   GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-3.1-flash-lite",
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
+  OPENROUTER_MODELS: (process.env.OPENROUTER_MODELS || "nvidia/nemotron-3-super-120b-a12b:free,qwen/qwen3.8-27b:free,google/gemma-4-31b-it:free").split(",").map(m => m.trim()).filter(Boolean),
   CLIENT_URL: process.env.CLIENT_URL || "http://localhost:5173",
   CLERK_PUBLISHABLE_KEY: process.env.CLERK_PUBLISHABLE_KEY || "pk_test_bWFpbi1seW54LTc3LmNsZXJrLmFjY291bnRzLmRldiQ",
   CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY || ""
