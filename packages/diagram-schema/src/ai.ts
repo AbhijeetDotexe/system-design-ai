@@ -33,12 +33,24 @@ export const AiDiagramResponseSchema = z.object({
 
 export type AiDiagramResponse = z.infer<typeof AiDiagramResponseSchema>;
 
+export const DiagramDetailSchema = z.enum(["simple", "standard", "detailed"]).optional();
+
+export type DiagramDetail = z.infer<typeof DiagramDetailSchema>;
+
 export const GenerateDiagramRequestSchema = z.object({
   prompt: z.string().min(3, "Prompt must be at least 3 characters long"),
+  detail: DiagramDetailSchema,
   existingDiagram: z.any().optional()
 });
 
 export type GenerateDiagramRequest = z.infer<typeof GenerateDiagramRequestSchema>;
+
+export const SimplifyDiagramRequestSchema = z.object({
+  currentDiagram: z.any(),
+  maxNodes: z.number().int().min(3).max(12).optional()
+});
+
+export type SimplifyDiagramRequest = z.infer<typeof SimplifyDiagramRequestSchema>;
 
 export const ModifyDiagramRequestSchema = z.object({
   instruction: z.string().min(3, "Instruction must be at least 3 characters long"),

@@ -8,12 +8,40 @@ export const api = axios.create({
   }
 });
 
-// Attach token if present in localStorage
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("systemcraft_token");
+let clerkTokenGetter: (() => Promise<string | null>) | null = null;
+
+export const setClerkTokenGetter = (getter: () => Promise<string | null>) => {
+  clerkTokenGetter = getter;
+};
+
+// Attach token dynamically: from Clerk token getter, window.Clerk, or localStorage
+api.interceptors.request.use(async (config) => {
+  let token: string | null = null;
+
+  if (clerkTokenGetter) {
+    try {
+      token = await clerkTokenGetter();
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!token && typeof window !== "undefined" && (window as any).Clerk?.session) {
+    try {
+      token = await (window as any).Clerk.session.getToken();
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!token) {
+    token = localStorage.getItem("systemcraft_token");
+  }
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
   return config;
 });
 

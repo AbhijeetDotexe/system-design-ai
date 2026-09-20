@@ -8,45 +8,68 @@ import {
 } from "@systemcraft/diagram-schema";
 import {
   SYSTEM_DESIGN_ARCHITECT_PROMPT,
-  SYSTEM_DESIGN_MODIFY_PROMPT
+  SYSTEM_DESIGN_MODIFY_PROMPT,
+  SYSTEM_DESIGN_SIMPLIFY_PROMPT,
+  SYSTEM_DESIGN_SUMMARIZE_PROMPT
 } from "./gemini.prompts.js";
 import { applyDagreLayout } from "../layout/dagre-layout.js";
+import type { DiagramDetail } from "@systemcraft/diagram-schema";
+
+const DETAIL_BUDGETS: Record<string, { maxNodes: number; maxEdges: number }> = {
+  simple: { maxNodes: 7, maxEdges: 8 },
+  standard: { maxNodes: 11, maxEdges: 13 },
+  detailed: { maxNodes: 15, maxEdges: 18 }
+};
 
 export class GeminiService {
-  private ai: GoogleGenAI | null = null;
+  private clients: GoogleGenAI[] = [];
+  private keyIndex = 0;
 
   constructor() {
-    if (ENV.GEMINI_API_KEY) {
-      this.ai = new GoogleGenAI({ apiKey: ENV.GEMINI_API_KEY });
-      logger.info(`[GeminiService] Initialized with model: ${ENV.GEMINI_MODEL}`);
+    const keys = ENV.GEMINI_API_KEYS.filter(k => k && k.length > 10);
+    if (keys.length > 0) {
+      this.clients = keys.map(k => new GoogleGenAI({ apiKey: k }));
+      logger.info(`[GeminiService] Initialized ${this.clients.length} client(s) with model: ${ENV.GEMINI_MODEL}`);
     } else {
-      logger.warn("[GeminiService] GEMINI_API_KEY not configured. Mock/Fallback mode active.");
+      logger.warn("[GeminiService] No GEMINI_API_KEY configured. Fallback mode active.");
     }
+  }
+
+  private getNextClient(): GoogleGenAI | null {
+    if (this.clients.length === 0) return null;
+    const client = this.clients[this.keyIndex];
+    this.keyIndex = (this.keyIndex + 1) % this.clients.length;
+    return client;
   }
 
   /**
    * Helper to execute Gemini model calls with retry on 503 transient spike
+   * Rotates through API keys on each attempt
    */
   private async executeWithRetry(
     promptText: string,
     retries = 2,
     delayMs = 1500
   ): Promise<string> {
-    if (!this.ai || !ENV.GEMINI_API_KEY) {
-      throw new Error("No Gemini client configured");
+    if (this.clients.length === 0) {
+      throw new Error("No Gemini clients configured");
     }
 
     for (let attempt = 1; attempt <= retries + 1; attempt++) {
+      const client = this.getNextClient();
+      if (!client) throw new Error("No Gemini clients available");
+
       try {
-        const response = await this.ai.models.generateContent({
+        const response = await client.models.generateContent({
           model: ENV.GEMINI_MODEL,
           contents: promptText
         });
         return response.text || "";
       } catch (err: any) {
         const is503 = err?.status === 503 || err?.message?.includes("503") || err?.message?.includes("UNAVAILABLE");
-        if (is503 && attempt <= retries) {
-          logger.warn(`[GeminiService] Transient 503 from Gemini on attempt ${attempt}. Retrying in ${delayMs}ms...`);
+        const is429 = err?.status === 429 || err?.message?.includes("429") || err?.message?.includes("quota");
+        if ((is503 || is429) && attempt <= retries) {
+          logger.warn(`[GeminiService] Transient ${is503 ? 503 : 429} from Gemini on attempt ${attempt} (key ${this.keyIndex}). Retrying in ${delayMs}ms...`);
           await new Promise((r) => setTimeout(r, delayMs * attempt));
           continue;
         }
@@ -57,40 +80,46 @@ export class GeminiService {
   }
 
   /**
-   * Generates a complete architecture diagram from a user description
+   * Generates a complete architecture diagram from a user description.
+   * Diagrams are intentionally kept small so they stay readable.
    */
-  async generateDiagram(prompt: string): Promise<DiagramDocument> {
-    logger.info(`[GeminiService] Generating diagram for prompt: "${prompt.slice(0, 80)}..."`);
+  async generateDiagram(prompt: string, detail: DiagramDetail = "standard"): Promise<DiagramDocument> {
+    logger.info(`[GeminiService] Generating diagram (detail=${detail}) for prompt: "${prompt.slice(0, 80)}..."`);
 
+    const budget = DETAIL_BUDGETS[detail ?? "standard"] ?? DETAIL_BUDGETS.standard;
     let rawJsonText = "";
 
-    if (this.ai && ENV.GEMINI_API_KEY) {
+    if (this.clients.length > 0) {
       try {
-        const fullPrompt = `${SYSTEM_DESIGN_ARCHITECT_PROMPT}\n\nUser Request: ${prompt}\n\nGenerate the system architecture JSON:`;
+        const systemPrompt = SYSTEM_DESIGN_ARCHITECT_PROMPT
+          .replaceAll("{{MAX_NODES}}", String(budget.maxNodes))
+          .replaceAll("{{MAX_EDGES}}", String(budget.maxEdges));
+        const fullPrompt = `${systemPrompt}\n\nUser Request: ${prompt}\n\nGenerate the system architecture JSON:`;
         rawJsonText = await this.executeWithRetry(fullPrompt);
       } catch (err) {
         logger.error("[GeminiService] Gemini API call failed, falling back to intelligent heuristics:", err);
-        rawJsonText = this.generateIntelligentFallback(prompt);
+        rawJsonText = this.generateIntelligentFallback(prompt, detail);
       }
     } else {
-      rawJsonText = this.generateIntelligentFallback(prompt);
+      rawJsonText = this.generateIntelligentFallback(prompt, detail);
     }
 
     const parsed = this.safeParseAndValidate(rawJsonText, prompt);
+    const capped = this.enforceSimplicity(parsed, budget.maxNodes, budget.maxEdges);
 
-    // Apply automatic layout (Dagre)
-    const formattedNodes = parsed.nodes.map((n) => ({
+    // Apply automatic layout (Dagre) — wider spacing for bigger graphs
+    const formattedNodes = capped.nodes.map((n) => ({
       id: n.id,
       type: n.type,
       label: n.label,
       description: n.description || "",
       tech: n.tech || "",
       position: { x: n.position?.x || 0, y: n.position?.y || 0 },
-      width: n.width || 180,
-      height: n.height || 85
+      width: n.width || 240,
+      height: n.height || 110
     }));
 
-    const formattedEdges = parsed.edges.map((e, index) => ({
+    const formattedEdges = capped.edges.map((e, index) => ({
       id: e.id || `e-${index}-${e.source}-${e.target}`,
       source: e.source,
       target: e.target,
@@ -100,17 +129,166 @@ export class GeminiService {
 
     const layoutResult = applyDagreLayout(formattedNodes, formattedEdges, {
       direction: "LR",
-      nodeSpacing: 70,
-      rankSpacing: 100
+      nodeSpacing: capped.nodes.length > 10 ? 90 : 70,
+      rankSpacing: capped.nodes.length > 10 ? 130 : 110
     });
 
     return {
-      title: parsed.title || "AI Generated Architecture",
-      description: parsed.description || `Generated from prompt: "${prompt}"`,
+      title: capped.title || "AI Generated Architecture",
+      description: capped.description || `Generated from prompt: "${prompt}"`,
       nodes: layoutResult.nodes,
       edges: layoutResult.edges,
       viewport: { x: 50, y: 50, zoom: 0.9 }
     };
+  }
+
+  /**
+   * Reduces an existing (too complex) diagram to its core boxes.
+   */
+  async simplifyDiagram(currentDiagram: DiagramDocument, maxNodes = 8): Promise<DiagramDocument> {
+    const budget = { maxNodes, maxEdges: maxNodes + 2 };
+    logger.info(`[GeminiService] Simplifying diagram to ${maxNodes} nodes`);
+
+    let rawJsonText = "";
+
+    if (this.clients.length > 0) {
+      try {
+        const diagramSummary = JSON.stringify({
+          title: currentDiagram.title,
+          nodes: currentDiagram.nodes.map((n) => ({ id: n.id, type: n.type, label: n.label, tech: (n as any).tech, description: (n as any).description })),
+          edges: currentDiagram.edges.map((e) => ({ id: e.id, source: e.source, target: e.target, label: e.label }))
+        });
+        const systemPrompt = SYSTEM_DESIGN_SIMPLIFY_PROMPT
+          .replaceAll("{{MAX_NODES}}", String(budget.maxNodes))
+          .replaceAll("{{MAX_EDGES}}", String(budget.maxEdges));
+        rawJsonText = await this.executeWithRetry(
+          `${systemPrompt}\n\nCurrent Architecture:\n${diagramSummary}\n\nOutput simplified architecture JSON:`
+        );
+      } catch (err) {
+        logger.error("[GeminiService] Simplify call failed, using local fallback:", err);
+        rawJsonText = JSON.stringify({
+          title: currentDiagram.title,
+          description: currentDiagram.description,
+          nodes: currentDiagram.nodes.slice(0, maxNodes),
+          edges: currentDiagram.edges.filter(
+            (e, i) => i < budget.maxEdges &&
+              currentDiagram.nodes.slice(0, maxNodes).some((n) => n.id === e.source) &&
+              currentDiagram.nodes.slice(0, maxNodes).some((n) => n.id === e.target)
+          )
+        });
+      }
+    } else {
+      rawJsonText = JSON.stringify({
+        title: currentDiagram.title,
+        description: currentDiagram.description,
+        nodes: currentDiagram.nodes.slice(0, maxNodes),
+        edges: currentDiagram.edges.filter(
+          (e, i) => i < budget.maxEdges &&
+            currentDiagram.nodes.slice(0, maxNodes).some((n) => n.id === e.source) &&
+            currentDiagram.nodes.slice(0, maxNodes).some((n) => n.id === e.target)
+        )
+      });
+    }
+
+    const parsed = this.safeParseAndValidate(rawJsonText, currentDiagram.title);
+    const capped = this.enforceSimplicity(parsed, budget.maxNodes, budget.maxEdges);
+
+    const formattedNodes = capped.nodes.map((n) => {
+      const existing = currentDiagram.nodes.find((ex) => ex.id === n.id);
+      return {
+        id: n.id,
+        type: n.type,
+        label: n.label,
+        description: n.description || (existing as any)?.description || "",
+        tech: n.tech || (existing as any)?.tech || "",
+        position: (existing as any)?.position || { x: 100, y: 100 },
+        width: n.width || (existing as any)?.width || 240,
+        height: n.height || (existing as any)?.height || 110,
+        style: (existing as any)?.style
+      };
+    });
+
+    const formattedEdges = capped.edges.map((e, idx) => ({
+      id: e.id || `e-${idx}-${e.source}-${e.target}`,
+      source: e.source,
+      target: e.target,
+      label: e.label || "connects",
+      type: e.type || "arrow"
+    }));
+
+    const layoutResult = applyDagreLayout(formattedNodes, formattedEdges, { direction: "LR" });
+
+    return {
+      ...currentDiagram,
+      title: capped.title || currentDiagram.title,
+      nodes: layoutResult.nodes,
+      edges: layoutResult.edges
+    };
+  }
+
+  /**
+   * Hard guardrails so no diagram is ever unreadable:
+   * caps node/edge counts, drops orphan edges, trims long labels.
+   */
+  private enforceSimplicity(
+    doc: AiDiagramResponse,
+    maxNodes: number,
+    maxEdges: number
+  ): AiDiagramResponse {
+    const trimWords = (s: string | undefined, max: number) => {
+      if (!s) return s as any;
+      const words = s.trim().split(/\s+/);
+      return words.length > max ? words.slice(0, max).join(" ") : s.trim();
+    };
+
+    let nodes = (doc.nodes || []).map((n) => ({
+      ...n,
+      label: trimWords(n.label, 4) || "Service",
+      tech: trimWords(n.tech, 3),
+      description: trimWords(n.description, 14)
+    }));
+
+    // Keep connected nodes first so trimming never strands orphans
+    if (nodes.length > maxNodes) {
+      const degree = new Map<string, number>();
+      for (const e of doc.edges || []) {
+        degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+        degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+      }
+      nodes = [...nodes]
+        .sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0))
+        .slice(0, maxNodes);
+    }
+
+    const ids = new Set(nodes.map((n) => n.id));
+    let edges = (doc.edges || [])
+      .filter((e) => ids.has(e.source) && ids.has(e.target) && e.source !== e.target)
+      .map((e) => ({ ...e, label: trimWords(e.label, 3) }));
+    // de-duplicate parallel edges
+    const seen = new Set<string>();
+    edges = edges.filter((e) => {
+      const k = `${e.source}->${e.target}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    }).slice(0, maxEdges);
+
+    // Drop nodes left disconnected (unless that would empty the diagram)
+    if (nodes.length > 1) {
+      const connected = new Set<string>();
+      for (const e of edges) {
+        connected.add(e.source);
+        connected.add(e.target);
+      }
+      const filtered = nodes.filter((n) => connected.has(n.id));
+      if (filtered.length >= Math.min(2, nodes.length)) {
+        const keep = new Set(filtered.map((n) => n.id));
+        nodes = filtered;
+        edges = edges.filter((e) => keep.has(e.source) && keep.has(e.target));
+      }
+    }
+
+    return { ...doc, nodes, edges };
   }
 
   /**
@@ -121,7 +299,7 @@ export class GeminiService {
 
     let rawJsonText = "";
 
-    if (this.ai && ENV.GEMINI_API_KEY) {
+    if (this.clients.length > 0) {
       try {
         const diagramSummary = JSON.stringify({
           title: currentDiagram.title,
@@ -209,32 +387,42 @@ export class GeminiService {
     }
   }
 
-  private generateIntelligentFallback(prompt: string): string {
+  private generateIntelligentFallback(prompt: string, detail: DiagramDetail = "standard"): string {
+    const budget = DETAIL_BUDGETS[detail ?? "standard"] ?? DETAIL_BUDGETS.standard;
     const lower = prompt.toLowerCase();
     const isFood = lower.includes("food") || lower.includes("delivery");
     const isInstagram = lower.includes("instagram") || lower.includes("photo") || lower.includes("social");
 
+    const trimToBudget = (doc: any) => {
+      const nodes = doc.nodes.slice(0, budget.maxNodes);
+      const ids = new Set(nodes.map((n: any) => n.id));
+      const edges = doc.edges
+        .filter((e: any) => ids.has(e.source) && ids.has(e.target))
+        .slice(0, budget.maxEdges);
+      return JSON.stringify({ ...doc, nodes, edges });
+    };
+
     if (isFood) {
-      return JSON.stringify({
-        title: "Scalable Food Delivery Architecture",
+      return trimToBudget({
+        title: "Food Delivery Architecture",
         description: "Event-driven system handling orders, drivers, restaurant dispatch, and real-time tracking.",
         nodes: [
-          { id: "cust-app", type: "mobile", label: "Customer Mobile App", description: "Food ordering and live driver tracking", tech: "Flutter / React Native" },
-          { id: "rest-portal", type: "browser", label: "Restaurant Portal", description: "Kitchen order management", tech: "React / Vite" },
-          { id: "driver-app", type: "mobile", label: "Driver App", description: "GPS telemetry and order acceptance", tech: "Kotlin / Swift" },
-          { id: "api-gw", type: "api_gateway", label: "Kong API Gateway", description: "Auth, rate limiting, and SSL termination", tech: "Kong" },
-          { id: "order-svc", type: "microservice", label: "Order Service", description: "State machine for order lifecycle", tech: "Go / gRPC" },
-          { id: "dispatch-svc", type: "microservice", label: "Dispatch & Matching", description: "Geospatial driver matching algorithm", tech: "Python / H3" },
+          { id: "cust-app", type: "mobile", label: "Customer App", description: "Order food and track drivers", tech: "Flutter" },
+          { id: "rest-portal", type: "browser", label: "Restaurant Portal", description: "Kitchen order management", tech: "React" },
+          { id: "driver-app", type: "mobile", label: "Driver App", description: "GPS tracking and order acceptance", tech: "Kotlin" },
+          { id: "api-gw", type: "api_gateway", label: "API Gateway", description: "Auth and rate limiting", tech: "Kong" },
+          { id: "order-svc", type: "microservice", label: "Order Service", description: "Order lifecycle state machine", tech: "Go" },
+          { id: "dispatch-svc", type: "microservice", label: "Dispatch Service", description: "Matches drivers to orders", tech: "Python" },
           { id: "pay-svc", type: "microservice", label: "Payment Service", description: "Escrow and payouts", tech: "Node.js" },
-          { id: "redis-geo", type: "redis", label: "Redis Geospatial Cache", description: "Live driver lat/long with GEOADD", tech: "Redis 7" },
-          { id: "order-db", type: "postgresql", label: "PostgreSQL Database", description: "Transactional order data (ACID)", tech: "PostgreSQL 16" },
-          { id: "kafka", type: "kafka", label: "Kafka Event Stream", description: "Order events, payment webhooks, dispatch triggers", tech: "Apache Kafka" },
-          { id: "notif-svc", type: "microservice", label: "Notification Service", description: "Push alerts & SMS", tech: "Firebase FCM / Twilio" }
+          { id: "redis-geo", type: "redis", label: "Driver Locations", description: "Live driver positions cache", tech: "Redis 7" },
+          { id: "order-db", type: "postgresql", label: "Orders DB", description: "Transactional order storage", tech: "Postgres 16" },
+          { id: "kafka", type: "kafka", label: "Event Bus", description: "Order and payment events", tech: "Kafka" },
+          { id: "notif-svc", type: "microservice", label: "Notifications", description: "Push alerts and SMS", tech: "FCM" }
         ],
         edges: [
-          { id: "e1", source: "cust-app", target: "api-gw", label: "HTTPS / REST" },
-          { id: "e2", source: "rest-portal", target: "api-gw", label: "HTTPS / REST" },
-          { id: "e3", source: "driver-app", target: "api-gw", label: "WebSocket / GPS" },
+          { id: "e1", source: "cust-app", target: "api-gw", label: "HTTPS" },
+          { id: "e2", source: "rest-portal", target: "api-gw", label: "HTTPS" },
+          { id: "e3", source: "driver-app", target: "api-gw", label: "Live GPS" },
           { id: "e4", source: "api-gw", target: "order-svc", label: "/orders" },
           { id: "e5", source: "api-gw", target: "dispatch-svc", label: "/dispatch" },
           { id: "e6", source: "driver-app", target: "redis-geo", label: "Update Location" },
@@ -248,21 +436,21 @@ export class GeminiService {
     }
 
     if (isInstagram) {
-      return JSON.stringify({
-        title: "Instagram-Scale Social Media Architecture",
+      return trimToBudget({
+        title: "Photo Sharing Architecture",
         description: "Media-heavy social network supporting photo uploads, feed generation, and high-concurrency read traffic.",
         nodes: [
-          { id: "client", type: "mobile", label: "Mobile Clients", description: "iOS / Android apps consuming feeds & posting", tech: "Swift / Kotlin" },
-          { id: "cdn", type: "cdn", label: "Cloudflare CDN", description: "Caches image/video media at edge locations", tech: "Cloudflare" },
-          { id: "lb", type: "load_balancer", label: "AWS ALB", description: "Distributes incoming traffic across clusters", tech: "AWS ALB" },
-          { id: "api-gw", type: "api_gateway", label: "API Gateway", description: "Route handling, token verification, throttling", tech: "Envoy" },
-          { id: "feed-svc", type: "microservice", label: "Feed Service", description: "Precomputes and serves home timelines", tech: "Go" },
-          { id: "media-svc", type: "microservice", label: "Media Upload Service", description: "Processes images and video transcode jobs", tech: "Rust / FFmpeg" },
-          { id: "user-svc", type: "microservice", label: "User & Graph Service", description: "Follower graphs and user profiles", tech: "Java / Spring" },
-          { id: "redis-feed", type: "redis", label: "Redis Feed Cache", description: "Stores precomputed fan-out feeds in Sorted Sets", tech: "Redis Cluster" },
-          { id: "s3-media", type: "storage", label: "S3 Media Storage", description: "Stores raw and compressed photos/videos", tech: "AWS S3" },
-          { id: "postgres-main", type: "postgresql", label: "PostgreSQL Cluster", description: "Relational data for posts, likes, comments", tech: "Postgres + Patroni" },
-          { id: "kafka", type: "kafka", label: "Kafka Event Bus", description: "Fan-out event stream on new posts", tech: "Kafka" }
+          { id: "client", type: "mobile", label: "Mobile App", description: "Browse feeds and post photos", tech: "Swift" },
+          { id: "cdn", type: "cdn", label: "Media CDN", description: "Caches photos at the edge", tech: "Cloudflare" },
+          { id: "lb", type: "load_balancer", label: "Load Balancer", description: "Spreads traffic across servers", tech: "AWS ALB" },
+          { id: "api-gw", type: "api_gateway", label: "API Gateway", description: "Routing and auth checks", tech: "Envoy" },
+          { id: "feed-svc", type: "microservice", label: "Feed Service", description: "Serves home timelines", tech: "Go" },
+          { id: "media-svc", type: "microservice", label: "Upload Service", description: "Processes photo uploads", tech: "Rust" },
+          { id: "user-svc", type: "microservice", label: "User Service", description: "Profiles and follower graph", tech: "Java" },
+          { id: "redis-feed", type: "redis", label: "Feed Cache", description: "Precomputed timeline cache", tech: "Redis" },
+          { id: "s3-media", type: "storage", label: "Media Storage", description: "Stores photos and videos", tech: "AWS S3" },
+          { id: "postgres-main", type: "postgresql", label: "Posts DB", description: "Posts, likes and comments", tech: "Postgres" },
+          { id: "kafka", type: "kafka", label: "Event Bus", description: "New-post fan-out events", tech: "Kafka" }
         ],
         edges: [
           { id: "e1", source: "client", target: "cdn", label: "Fetch Media" },
@@ -273,35 +461,35 @@ export class GeminiService {
           { id: "e6", source: "api-gw", target: "user-svc", label: "/users" },
           { id: "e7", source: "feed-svc", target: "redis-feed", label: "Read Fan-out Feed" },
           { id: "e8", source: "media-svc", target: "s3-media", label: "Store Assets" },
-          { id: "e9", source: "user-svc", target: "postgres-main", label: "Read / Write SQL" },
+          { id: "e9", source: "user-svc", target: "postgres-main", label: "SQL" },
           { id: "e10", source: "media-svc", target: "kafka", label: "Publish PostCreated" },
           { id: "e11", source: "kafka", target: "feed-svc", label: "Async Fan-out Worker" }
         ]
       });
     }
 
-    return JSON.stringify({
-      title: "Scalable Distributed System Architecture",
+    return trimToBudget({
+      title: "Distributed System Architecture",
       description: "Resilient high-throughput architecture with API Gateway, caching tier, primary database, and event streaming.",
       nodes: [
-        { id: "client", type: "client", label: "Clients", description: "Web, Mobile, and IoT endpoints", tech: "React / Native" },
-        { id: "cdn", type: "cdn", label: "CDN / Edge", description: "Static caching and DDoS mitigation", tech: "Cloudflare" },
-        { id: "lb", type: "load_balancer", label: "Load Balancer", description: "Reverse proxy and SSL termination", tech: "NGINX" },
-        { id: "api-gw", type: "api_gateway", label: "API Gateway", description: "Centralized routing and auth", tech: "Kong" },
-        { id: "core-svc", type: "service", label: "Core Business Service", description: "Processes requests and business logic", tech: "Node.js / Go" },
-        { id: "redis", type: "redis", label: "Redis Cache", description: "Sub-millisecond read caching", tech: "Redis 7" },
-        { id: "database", type: "postgresql", label: "Primary Database", description: "ACID compliant persistent storage", tech: "PostgreSQL 16" },
-        { id: "kafka", type: "kafka", label: "Kafka Event Bus", description: "Asynchronous task and event broker", tech: "Apache Kafka" },
-        { id: "worker-svc", type: "microservice", label: "Async Worker Service", description: "Consumes background queue jobs", tech: "Python" },
-        { id: "storage", type: "storage", label: "Object Storage", description: "Durable storage for files and backups", tech: "AWS S3" }
+          { id: "client", type: "client", label: "Clients", description: "Web and mobile users", tech: "React" },
+          { id: "cdn", type: "cdn", label: "Edge CDN", description: "Caches static content", tech: "Cloudflare" },
+          { id: "lb", type: "load_balancer", label: "Load Balancer", description: "Spreads incoming traffic", tech: "NGINX" },
+          { id: "api-gw", type: "api_gateway", label: "API Gateway", description: "Routing and auth", tech: "Kong" },
+          { id: "core-svc", type: "service", label: "Core Service", description: "Main business logic", tech: "Node.js" },
+          { id: "redis", type: "redis", label: "Redis Cache", description: "Fast read cache", tech: "Redis 7" },
+          { id: "database", type: "postgresql", label: "Main DB", description: "Persistent data storage", tech: "Postgres 16" },
+          { id: "kafka", type: "kafka", label: "Event Bus", description: "Background event stream", tech: "Kafka" },
+          { id: "worker-svc", type: "microservice", label: "Worker Service", description: "Handles background jobs", tech: "Python" },
+          { id: "storage", type: "storage", label: "File Storage", description: "Files and backups", tech: "AWS S3" }
       ],
       edges: [
-        { id: "e1", source: "client", target: "cdn", label: "HTTPS" },
-        { id: "e2", source: "cdn", target: "lb", label: "Cache Miss" },
-        { id: "e3", source: "lb", target: "api-gw", label: "Balance Load" },
-        { id: "e4", source: "api-gw", target: "core-svc", label: "Route Request" },
-        { id: "e5", source: "core-svc", target: "redis", label: "Read / Write Cache" },
-        { id: "e6", source: "core-svc", target: "database", label: "Write SQL" },
+          { id: "e1", source: "client", target: "cdn", label: "HTTPS" },
+          { id: "e2", source: "cdn", target: "lb", label: "Cache miss" },
+          { id: "e3", source: "lb", target: "api-gw", label: "Forward" },
+          { id: "e4", source: "api-gw", target: "core-svc", label: "Route" },
+          { id: "e5", source: "core-svc", target: "redis", label: "Cache check" },
+          { id: "e6", source: "core-svc", target: "database", label: "Save" },
         { id: "e7", source: "core-svc", target: "kafka", label: "Produce Events" },
         { id: "e8", source: "kafka", target: "worker-svc", label: "Consume Events" },
         { id: "e9", source: "worker-svc", target: "storage", label: "Store Blobs" }
@@ -388,6 +576,72 @@ export class GeminiService {
       nodes: updatedNodes,
       edges: updatedEdges
     });
+  }
+
+  /**
+   * Summarizes a diagram in plain English for non-technical stakeholders
+   */
+  async summarizeDiagram(currentDiagram: DiagramDocument): Promise<string> {
+    logger.info(`[GeminiService] Summarizing diagram: "${currentDiagram.title}"`);
+
+    if (this.clients.length === 0) {
+      return this.fallbackSummary(currentDiagram);
+    }
+
+    try {
+      const diagramSummary = JSON.stringify({
+        title: currentDiagram.title,
+        nodes: currentDiagram.nodes.map((n) => ({
+          id: n.id, type: n.type, label: n.label, tech: n.tech, description: n.description
+        })),
+        edges: currentDiagram.edges.map((e) => ({
+          id: e.id, source: e.source, target: e.target, label: e.label
+        }))
+      });
+
+      const fullPrompt = `${SYSTEM_DESIGN_SUMMARIZE_PROMPT}\n\nArchitecture Diagram:\n${diagramSummary}\n\nSummary:`;
+      return await this.executeWithRetry(fullPrompt);
+    } catch (err) {
+      logger.error("[GeminiService] Summarize call failed, using fallback:", err);
+      return this.fallbackSummary(currentDiagram);
+    }
+  }
+
+  private fallbackSummary(doc: DiagramDocument): string {
+    const nodes = doc.nodes || [];
+    const edges = doc.edges || [];
+
+    if (nodes.length === 0) {
+      return "This diagram is empty. Add components to see a summary.";
+    }
+
+    const clients = nodes.filter(n => ["client", "browser", "mobile"].includes(n.type));
+    const services = nodes.filter(n => ["service", "microservice", "server"].includes(n.type));
+    const databases = nodes.filter(n => ["database", "postgresql", "mongodb", "mysql", "redis", "cache"].includes(n.type));
+    const gateways = nodes.filter(n => ["api_gateway", "load_balancer", "cdn"].includes(n.type));
+
+    const mainService = services[0] || nodes[0];
+    const mainDb = databases[0];
+
+    let summary = `This system lets users ${mainService?.label?.toLowerCase() || "perform actions"} through ${clients[0]?.label?.toLowerCase() || "a client"}.`;
+
+    if (gateways.length > 0) {
+      summary += ` Requests go through ${gateways[0].label.toLowerCase()}`;
+    }
+
+    if (services.length > 0) {
+      summary += ` to the ${services.map(s => s.label.toLowerCase()).join(", ")} service${services.length > 1 ? "s" : ""}`;
+    }
+
+    if (mainDb) {
+      summary += `, which stores data in ${mainDb.label.toLowerCase()}`;
+    }
+
+    if (edges.length > 0) {
+      summary += `. Events flow between ${Math.min(edges.length, 3)} connection${edges.length > 1 ? "s" : ""} to keep everything in sync.`;
+    }
+
+    return summary + ".";
   }
 }
 

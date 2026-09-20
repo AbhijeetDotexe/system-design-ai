@@ -1,57 +1,52 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuthStore } from "../stores/authStore";
-import { 
-  Sparkles, Layers, ShieldCheck, Zap, ArrowRight, 
-  Cpu, GitFork, Database, CheckCircle2, Download
+import { useAuth } from "@clerk/react";
+import {
+  Sparkles, Layers, Zap, ArrowRight,
 } from "lucide-react";
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuthStore();
+  const { isSignedIn } = useAuth();
 
   const handleStart = () => {
-    if (isAuthenticated) {
-      navigate("/dashboard");
-    } else {
-      navigate("/register");
-    }
+    navigate(isSignedIn ? "/dashboard" : "/register");
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0c10] text-foreground flex flex-col selection:bg-indigo-500 selection:text-white overflow-x-hidden">
-      {/* Navigation */}
-      <header className="h-16 border-b border-white/5 bg-[#0d1117]/80 backdrop-blur-md sticky top-0 z-50 px-6 flex items-center justify-between">
+    <div className="min-h-screen bg-background text-foreground flex flex-col overflow-x-hidden relative">
+      {/* Navigation — Notion flat bar */}
+      <header className="h-16 border-b border-border bg-card sticky top-0 z-50 px-6 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
+          <div className="w-8 h-8 rounded-md bg-foreground text-background flex items-center justify-center">
             <Sparkles className="w-4 h-4" />
           </div>
-          <span className="font-bold text-base tracking-tight text-white">
-            SystemCraft<span className="text-indigo-400">AI</span>
+          <span className="font-semibold text-[15px] tracking-tight">
+            SystemCraft AI
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
-          {isAuthenticated ? (
+        <div className="flex items-center gap-2">
+          {isSignedIn ? (
             <Link
               to="/dashboard"
-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/25 transition-all"
+              className="px-4 py-2 rounded-md bg-primary hover:bg-primary-hover text-primary-foreground text-[13px] font-medium transition-all"
             >
-              Open Dashboard
+              Open dashboard
             </Link>
           ) : (
             <>
               <Link
                 to="/login"
-                className="px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+                className="px-4 py-2 text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
               >
-                Sign In
+                Sign in
               </Link>
               <Link
                 to="/register"
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/25 transition-all"
+                className="px-4 py-2 rounded-md bg-foreground text-background hover:opacity-90 text-[13px] font-medium transition-all"
               >
-                Get Started
+                Get started
               </Link>
             </>
           )}
@@ -59,120 +54,90 @@ export const LandingPage: React.FC = () => {
       </header>
 
       {/* Hero Section */}
-      <section className="relative pt-20 pb-20 px-6 text-center max-w-5xl mx-auto space-y-6">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 text-xs font-medium">
-          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Powered by Google Gemini 2.5 Distributed System Architect</span>
+      <section className="relative pt-16 md:pt-24 pb-16 px-6 text-center max-w-3xl mx-auto space-y-6 z-10">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted border border-border text-muted-foreground text-[12px] font-medium">
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>AI system architect, powered by Gemini</span>
         </div>
 
-        <h1 className="text-4xl sm:text-6xl font-extrabold text-white tracking-tight leading-[1.15]">
-          Design Systems. <br className="hidden sm:inline" />
-          <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-            Describe Them. AI Draws Them.
-          </span>
+        <h1 className="text-4xl sm:text-6xl font-bold tracking-tight leading-[1.1]">
+          Design systems by just describing them.
         </h1>
 
-        <p className="text-base sm:text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
-          Turn natural-language requirements into production-grade software architecture diagrams.
-          Interact, edit manually, and collaborate on a high-performance visual canvas.
+        <p className="text-[15px] sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+          Turn plain English into clean architecture diagrams.
+          Drag blocks, connect services, or let AI draft the whole thing.
         </p>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <button
             onClick={handleStart}
-            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-semibold text-sm shadow-xl shadow-indigo-500/25 transition-all flex items-center justify-center gap-2 active:scale-95"
+            className="w-full sm:w-auto px-6 py-2.5 rounded-md bg-foreground text-background hover:opacity-90 font-medium text-sm transition-all flex items-center justify-center gap-2 active:scale-95"
           >
-            <span>Start Designing Free</span>
+            <span>Start designing free</span>
             <ArrowRight className="w-4 h-4" />
           </button>
           <button
             onClick={() => navigate("/editor/new")}
-            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-200 font-semibold text-sm transition-all"
+            className="w-full sm:w-auto px-6 py-2.5 rounded-md bg-card hover:bg-muted border border-border font-medium text-sm transition-all"
           >
-            Open Scratchpad Canvas
+            Open scratchpad
           </button>
         </div>
 
-        {/* Hero Interactive Diagram Preview Mockup */}
-        <div className="pt-10">
-          <div className="relative rounded-2xl border border-white/10 bg-[#0d1117] p-4 sm:p-6 shadow-2xl overflow-hidden text-left">
-            <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
-              <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                <span>Live System: Real-time Food Delivery & Dispatch Platform</span>
+        {/* Preview */}
+        <div className="pt-10 text-left">
+          <div className="relative rounded-xl border border-border bg-card p-4 sm:p-6 shadow-card overflow-hidden">
+            <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
+              <div className="flex items-center gap-2 text-[13px] font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="hidden sm:inline">Example: food delivery platform</span>
+                <span className="sm:hidden">Food delivery platform</span>
               </div>
-              <div className="text-[11px] px-2 py-0.5 rounded bg-indigo-950/60 border border-indigo-500/30 text-indigo-300">
-                Dagre Auto-Layout
+              <div className="text-[11px] font-medium px-2.5 py-1 rounded-md bg-muted border border-border text-muted-foreground">
+                1-click tidy layout
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 py-4">
-              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-blue-500/30 space-y-1">
-                <div className="text-[10px] font-mono text-blue-400 font-semibold">CLIENTS</div>
-                <div className="text-xs font-bold text-white">Flutter Mobile & Web</div>
-                <div className="text-[10px] text-slate-400">Customer & Driver apps</div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-indigo-500/30 space-y-1">
-                <div className="text-[10px] font-mono text-indigo-400 font-semibold">API GATEWAY</div>
-                <div className="text-xs font-bold text-white">Kong Gateway</div>
-                <div className="text-[10px] text-slate-400">JWT Auth & Rate Limiting</div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-red-500/30 space-y-1">
-                <div className="text-[10px] font-mono text-red-400 font-semibold">CACHE & GEO</div>
-                <div className="text-xs font-bold text-white">Redis Cluster</div>
-                <div className="text-[10px] text-slate-400">Geospatial driver tracking</div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-cyan-500/30 space-y-1">
-                <div className="text-[10px] font-mono text-cyan-400 font-semibold">DATA STORE</div>
-                <div className="text-xs font-bold text-white">PostgreSQL 16</div>
-                <div className="text-[10px] text-slate-400">ACID Order state machine</div>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 py-2">
+              {[
+                ["Clients", "Flutter + Web", "Customer & driver apps"],
+                ["API gateway", "Kong", "Auth & rate limits"],
+                ["Cache & geo", "Redis", "Driver tracking"],
+                ["Data store", "PostgreSQL 16", "Orders state machine"],
+              ].map(([k, v, d]) => (
+                <div key={k} className="p-3.5 rounded-lg bg-muted/50 border border-border space-y-1">
+                  <div className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">{k}</div>
+                  <div className="text-[13px] font-semibold">{v}</div>
+                  <div className="text-[11px] text-muted-foreground">{d}</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </section>
 
-      {/* Feature Highlights Grid */}
-      <section className="py-16 px-6 max-w-6xl mx-auto border-t border-white/5">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="p-6 rounded-2xl bg-[#0f131a] border border-white/5 space-y-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-              <Sparkles className="w-5 h-5" />
+      {/* Features */}
+      <section className="py-14 px-6 max-w-5xl mx-auto border-t border-border z-10 w-full">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            { icon: <Sparkles className="w-5 h-5" />, t: "Describe → diagram", d: "Gemini infers gateways, services, caches, databases and wires them together with typed connections." },
+            { icon: <Layers className="w-5 h-5" />, t: "Drag, drop, connect", d: "17 infrastructure blocks. Hover any card for connect dots, right-click for more, or click + to place." },
+            { icon: <Zap className="w-5 h-5" />, t: "Always tidy & shareable", d: "Auto-layout removes overlaps, autosave keeps you safe, and one link shares a clean read-only view." },
+          ].map((f) => (
+            <div key={f.t} className="p-6 rounded-xl bg-card border border-border space-y-3 hover:border-muted-foreground/30 transition-all">
+              <div className="w-10 h-10 rounded-lg bg-muted border border-border text-muted-foreground flex items-center justify-center">
+                {f.icon}
+              </div>
+              <h3 className="text-[15px] font-semibold tracking-tight">{f.t}</h3>
+              <p className="text-[13px] text-muted-foreground leading-relaxed">{f.d}</p>
             </div>
-            <h3 className="text-base font-semibold text-white">Google Gemini AI Engine</h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Describe requirements in plain English. Gemini infers caching, message brokers, databases, and microservices with typed connections.
-            </p>
-          </div>
-
-          <div className="p-6 rounded-2xl bg-[#0f131a] border border-white/5 space-y-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
-              <Layers className="w-5 h-5" />
-            </div>
-            <h3 className="text-base font-semibold text-white">Architecture Component Library</h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Dedicated components for PostgreSQL, MongoDB, Redis, Kafka, Kubernetes, AWS, Kong, CDN, and microservices with instant drag-and-drop.
-            </p>
-          </div>
-
-          <div className="p-6 rounded-2xl bg-[#0f131a] border border-white/5 space-y-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-              <Zap className="w-5 h-5" />
-            </div>
-            <h3 className="text-base font-semibold text-white">Automatic Dagre Layout</h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              No overlapping nodes or tangled edges. Automatic hierarchical graph layout positions everything cleanly from Left-to-Right or Top-to-Bottom.
-            </p>
-          </div>
+          ))}
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="mt-auto border-t border-white/5 py-8 text-center text-xs text-slate-500">
-        SystemCraft AI — Production Architecture Platform. Built with React, Vite, Node.js & Google Gemini.
+      <footer className="mt-auto border-t border-border py-8 text-center text-[12px] text-muted-foreground z-10">
+        SystemCraft AI — React · Vite · Node.js · Gemini
       </footer>
     </div>
   );

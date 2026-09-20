@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { useUser, useClerk, UserButton } from "@clerk/react";
 import { api } from "../services/api";
 import { useAuthStore } from "../stores/authStore";
 import { SYSTEM_TEMPLATES } from "@systemcraft/shared";
@@ -12,9 +13,23 @@ import {
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user, logout } = useAuthStore();
+  const { user: clerkUser } = useUser();
+  const { signOut } = useClerk();
+  const { syncUser, logout } = useAuthStore();
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<"diagrams" | "templates">("diagrams");
+
+  // Sync user with backend
+  React.useEffect(() => {
+    if (clerkUser) {
+      syncUser({
+        clerkId: clerkUser.id,
+        email: clerkUser.primaryEmailAddress?.emailAddress || "",
+        name: clerkUser.fullName || clerkUser.firstName || "User",
+        avatar: clerkUser.imageUrl
+      });
+    }
+  }, [clerkUser, syncUser]);
 
   // Fetch Diagrams
   const { data: diagrams = [], isLoading } = useQuery({
@@ -71,30 +86,33 @@ export const DashboardPage: React.FC = () => {
   });
 
   return (
-    <div className="min-h-screen bg-[#0a0c10] text-foreground flex flex-col">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Top Navigation */}
-      <header className="h-16 border-b border-white/5 bg-[#0d1117] px-6 flex items-center justify-between">
+      <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
-            <Sparkles className="w-5 h-5" />
+          <div className="w-8 h-8 rounded-md bg-foreground text-background flex items-center justify-center">
+            <Sparkles className="w-4 h-4" />
           </div>
-          <span className="font-bold text-base tracking-tight text-white">
-            SystemCraft<span className="text-indigo-400">AI</span>
+          <span className="font-semibold text-[15px] tracking-tight">
+            SystemCraft AI
           </span>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-xs text-slate-300">
-            {user?.avatar && (
-              <img src={user.avatar} alt="avatar" className="w-7 h-7 rounded-full border border-white/10" />
-            )}
-            <span className="font-medium">{user?.name}</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-[12.5px]">
+            <UserButton />
+            <span className="font-medium hidden sm:inline text-foreground">
+              {clerkUser?.fullName || clerkUser?.primaryEmailAddress?.emailAddress}
+            </span>
           </div>
 
           <button
-            onClick={() => logout().then(() => navigate("/"))}
-            className="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
-            title="Log Out"
+            onClick={() => {
+              logout();
+              signOut(() => navigate("/"));
+            }}
+            className="p-2 rounded-lg hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-colors"
+            title="Log out"
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -102,22 +120,22 @@ export const DashboardPage: React.FC = () => {
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8 space-y-6">
+      <main className="flex-1 max-w-6xl w-full mx-auto p-6 md:p-8 space-y-6">
         {/* Banner with Action Buttons */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-slate-900/40 border border-indigo-500/20 rounded-2xl p-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-card border border-border rounded-xl p-6 shadow-card">
           <div className="space-y-1">
-            <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">
-              Software Architecture & System Diagrams
+            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">
+              Your architectures
             </h1>
-            <p className="text-xs md:text-sm text-slate-400">
-              Draw manually, choose from production templates, or ask Gemini AI to generate complete distributed architectures.
+            <p className="text-[13px] md:text-sm text-muted-foreground">
+              Draw by hand, start from a template, or describe it and let AI generate the whole system.
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
             <button
               onClick={() => createMutation.mutate("Untitled Architecture")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-all active:scale-95"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-md bg-foreground text-background hover:opacity-90 text-[13px] font-medium transition-all active:scale-95"
             >
               <Plus className="w-4 h-4" />
               <span>New Diagram</span>
@@ -126,41 +144,41 @@ export const DashboardPage: React.FC = () => {
         </div>
 
         {/* Tab & Search Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveTab("diagrams")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-[13px] font-medium transition-colors ${
                 activeTab === "diagrams"
-                  ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30"
-                  : "text-slate-400 hover:text-white"
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
               }`}
             >
               <Folder className="w-3.5 h-3.5" />
-              <span>My Diagrams</span>
+              <span>My diagrams</span>
             </button>
             <button
               onClick={() => setActiveTab("templates")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-[13px] font-medium transition-colors ${
                 activeTab === "templates"
-                  ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30"
-                  : "text-slate-400 hover:text-white"
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
               }`}
             >
               <LayoutTemplate className="w-3.5 h-3.5" />
-              <span>System Templates</span>
+              <span>Templates</span>
             </button>
           </div>
 
           {activeTab === "diagrams" && (
             <div className="relative w-full sm:w-72">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search diagrams..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-900 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                className="w-full pl-9 pr-3 py-2 text-[12.5px] bg-muted/70 border border-border rounded-xl placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition"
               />
             </div>
           )}
@@ -172,26 +190,26 @@ export const DashboardPage: React.FC = () => {
             {isLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-44 rounded-2xl bg-slate-900/40 border border-white/5 animate-pulse" />
+                  <div key={i} className="h-44 rounded-3xl bg-muted border border-border animate-pulse" />
                 ))}
               </div>
             ) : diagrams.length === 0 ? (
               /* Empty State */
               <div className="py-16 text-center space-y-4 max-w-md mx-auto">
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-900 border border-white/10 flex items-center justify-center text-slate-500">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-muted border border-border flex items-center justify-center text-muted-foreground">
                   <Layers className="w-7 h-7" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-base font-semibold text-white">No diagrams found</h3>
-                  <p className="text-xs text-slate-400">
-                    Create your first system design diagram or let Gemini generate one automatically.
+                  <h3 className="text-[15px] font-extrabold">No diagrams yet</h3>
+                  <p className="text-[12.5px] text-muted-foreground">
+                    Create a blank canvas, start from a template, or let AI generate one.
                   </p>
                 </div>
                 <button
                   onClick={() => createMutation.mutate("New Architecture Diagram")}
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold inline-flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-md bg-foreground text-background hover:opacity-90 text-[13px] font-medium inline-flex items-center gap-2"
                 >
-                  <Plus className="w-4 h-4" /> Create Diagram
+                  <Plus className="w-4 h-4" /> Create diagram
                 </button>
               </div>
             ) : (
@@ -200,10 +218,10 @@ export const DashboardPage: React.FC = () => {
                   <div
                     key={diag._id}
                     onClick={() => navigate(`/editor/${diag._id}`)}
-                    className="group relative bg-[#0f131a] hover:bg-[#131924] border border-white/5 hover:border-indigo-500/40 rounded-2xl p-5 cursor-pointer transition-all shadow-md hover:shadow-xl hover:shadow-indigo-500/5 space-y-3"
+                    className="group relative bg-card hover:border-muted-foreground/30 border border-border rounded-xl p-5 cursor-pointer transition-all shadow-card space-y-3"
                   >
                     <div className="flex items-start justify-between">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-950/60 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-105 transition-transform">
+                      <div className="w-10 h-10 rounded-lg bg-muted border border-border flex items-center justify-center text-muted-foreground group-hover:text-foreground transition-colors">
                         <Layers className="w-5 h-5" />
                       </div>
 
@@ -211,14 +229,14 @@ export const DashboardPage: React.FC = () => {
                         <button
                           onClick={() => duplicateMutation.mutate(diag._id)}
                           title="Duplicate"
-                          className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white"
+                          className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => deleteMutation.mutate(diag._id)}
                           title="Delete"
-                          className="p-1.5 rounded-lg hover:bg-red-500/20 text-slate-400 hover:text-red-400"
+                          className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -226,10 +244,10 @@ export const DashboardPage: React.FC = () => {
                     </div>
 
                     <div>
-                      <h3 className="text-sm font-semibold text-white group-hover:text-indigo-300 transition-colors truncate">
+                      <h3 className="text-sm font-semibold transition-colors truncate">
                         {diag.title}
                       </h3>
-                      <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-1">
                         <Clock className="w-3 h-3" />
                         <span>Updated {new Date(diag.updatedAt).toLocaleDateString()}</span>
                         <span>• v{diag.version || 1}</span>
@@ -249,27 +267,27 @@ export const DashboardPage: React.FC = () => {
               <div
                 key={tmpl.id}
                 onClick={() => createFromTemplateMutation.mutate(tmpl)}
-                className="group relative bg-[#0f131a] hover:bg-[#131924] border border-white/5 hover:border-indigo-500/40 rounded-2xl p-5 cursor-pointer transition-all shadow-md hover:shadow-xl space-y-3"
+                className="group relative bg-card hover:border-muted-foreground/30 border border-border rounded-xl p-5 cursor-pointer transition-all shadow-card space-y-3"
               >
                 <div className="flex items-start justify-between">
-                  <span className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-950/60 border border-indigo-500/30">
+                  <span className="text-[11px] font-medium px-2 py-1 rounded-md bg-muted border border-border text-muted-foreground">
                     {tmpl.category}
                   </span>
-                  <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-indigo-400" />
+                  <ExternalLink className="w-4 h-4 text-muted-foreground" />
                 </div>
 
                 <div>
-                  <h3 className="text-sm font-semibold text-white group-hover:text-indigo-300 transition-colors">
+                  <h3 className="text-sm font-semibold">
                     {tmpl.name}
                   </h3>
-                  <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                  <p className="text-[12px] text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
                     {tmpl.description}
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {tmpl.tags.map((t) => (
-                    <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-slate-400">
+                    <span key={t} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                       {t}
                     </span>
                   ))}

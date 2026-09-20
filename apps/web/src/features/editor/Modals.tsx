@@ -36,7 +36,7 @@ export const JsonModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-3xl bg-white dark:bg-[#0f131a] border border-slate-200 dark:border-white/10 rounded-2xl p-5 shadow-2xl flex flex-col max-h-[85vh]">
+      <div className="w-full max-w-3xl bg-card border border-border rounded-3xl p-5 shadow-card flex flex-col max-h-[85vh] animate-pop-in">
         <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-white/5">
           <h2 className="text-sm font-semibold text-slate-800 dark:text-white">Diagram JSON Representation</h2>
           <div className="flex items-center gap-2">
@@ -102,11 +102,11 @@ export const ShareModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md bg-white dark:bg-[#0f131a] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-2xl space-y-4">
+      <div className="w-full max-w-md bg-card border border-border rounded-3xl p-6 shadow-card space-y-4 animate-pop-in">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Share2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            <h2 className="text-sm font-semibold text-slate-800 dark:text-white">Share Architecture Diagram</h2>
+            <Share2 className="w-5 h-5 text-primary" />
+            <h2 className="text-sm font-bold">Share architecture diagram</h2>
           </div>
           <button
             onClick={() => setShareModalOpen(false)}
@@ -167,17 +167,19 @@ export const ShortcutsModal: React.FC = () => {
     { key: "Right-Click Node", desc: "Context menu (layering, duplicate)" },
     { key: "Mouse Wheel", desc: "Pan canvas" },
     { key: "Ctrl + Mouse Wheel", desc: "Zoom in / out" },
-    { key: "Shift + Click", desc: "Multi-select nodes" },
+    { key: "Shift + Delete", desc: "Clear entire canvas" },
+    { key: "Right-Click Node", desc: "Context menu (layering, duplicate)" },
+    { key: "]", desc: "Show / hide properties panel" },
     { key: "Drag Handle", desc: "Resize shape (8 directions)" }
   ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md bg-white dark:bg-[#0f131a] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-2xl space-y-4">
+      <div className="w-full max-w-md bg-card border border-border rounded-3xl p-6 shadow-card space-y-4 animate-pop-in">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Keyboard className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            <h2 className="text-sm font-semibold text-slate-800 dark:text-white">Keyboard Shortcuts & Tools</h2>
+            <Keyboard className="w-5 h-5 text-primary" />
+            <h2 className="text-sm font-bold">Shortcuts & tools</h2>
           </div>
           <button
             onClick={() => setShortcutsModalOpen(false)}

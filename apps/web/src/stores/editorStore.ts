@@ -50,6 +50,7 @@ interface EditorState {
   selectNode: (id: string, multi?: boolean) => void;
   selectEdge: (id: string | null) => void;
   clearSelection: () => void;
+  clearAll: () => void;
   
   // Node manipulation & Resizing
   addNode: (node: Partial<DiagramNode> & { label?: string }) => string;
@@ -200,8 +201,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       description: nodeData.description || "",
       tech: nodeData.tech || "",
       position: nodeData.position || { x: 200, y: 150 },
-      width: Math.max(60, nodeData.width || 180),
-      height: Math.max(40, nodeData.height || 85),
+      width: Math.max(60, nodeData.width || 240),
+      height: Math.max(40, nodeData.height || 110),
       style: nodeData.style
     };
 
@@ -316,6 +317,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...document,
         nodes: remainingNodes,
         edges: remainingEdges
+      },
+      selectedNodeIds: [],
+      selectedEdgeId: null,
+      isSaved: false
+    });
+    get().pushHistory();
+  },
+
+  clearAll: () => {
+    set({
+      document: {
+        ...get().document,
+        nodes: [],
+        edges: []
       },
       selectedNodeIds: [],
       selectedEdgeId: null,
@@ -479,10 +494,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const g = new dagre.graphlib.Graph();
     g.setGraph({
       rankdir: direction,
-      nodesep: 70,
-      ranksep: 100,
-      marginx: 80,
-      marginy: 80
+      nodesep: 160,
+      ranksep: 220,
+      marginx: 100,
+      marginy: 100
     });
     g.setDefaultEdgeLabel(() => ({}));
 

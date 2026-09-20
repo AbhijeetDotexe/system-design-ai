@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@clerk/react": "^6.16.1",
     "@systemcraft/diagram-schema": "workspace:*",
     "@systemcraft/shared": "workspace:*",
     "@tanstack/react-query": "^5.45.0",

@@ -9,23 +9,23 @@ import {
 } from "lucide-react";
 
 const ICON_MAP: Record<string, React.ReactNode> = {
-  Monitor: <Monitor className="w-4 h-4 text-blue-400" />,
-  Globe: <Globe className="w-4 h-4 text-cyan-400" />,
-  Smartphone: <Smartphone className="w-4 h-4 text-sky-400" />,
-  Zap: <Zap className="w-4 h-4 text-amber-400" />,
-  Network: <Network className="w-4 h-4 text-indigo-400" />,
-  ShieldAlert: <ShieldAlert className="w-4 h-4 text-violet-400" />,
-  Server: <Server className="w-4 h-4 text-emerald-400" />,
-  Cpu: <Cpu className="w-4 h-4 text-teal-400" />,
-  Boxes: <Box className="w-4 h-4 text-blue-500" />,
-  Database: <Database className="w-4 h-4 text-cyan-400" />,
-  Layers: <Layers className="w-4 h-4 text-red-500" />,
-  HardDrive: <HardDrive className="w-4 h-4 text-orange-400" />,
-  GitFork: <GitFork className="w-4 h-4 text-rose-400" />,
-  MessageSquare: <GitFork className="w-4 h-4 text-amber-500" />,
-  KeyRound: <KeyRound className="w-4 h-4 text-purple-400" />,
-  Activity: <Activity className="w-4 h-4 text-pink-400" />,
-  Box: <Box className="w-4 h-4 text-gray-400" />
+  Monitor: <Monitor className="w-4 h-4" />,
+  Globe: <Globe className="w-4 h-4" />,
+  Smartphone: <Smartphone className="w-4 h-4" />,
+  Zap: <Zap className="w-4 h-4" />,
+  Network: <Network className="w-4 h-4" />,
+  ShieldAlert: <ShieldAlert className="w-4 h-4" />,
+  Server: <Server className="w-4 h-4" />,
+  Cpu: <Cpu className="w-4 h-4" />,
+  Boxes: <Box className="w-4 h-4" />,
+  Database: <Database className="w-4 h-4" />,
+  Layers: <Layers className="w-4 h-4" />,
+  HardDrive: <HardDrive className="w-4 h-4" />,
+  GitFork: <GitFork className="w-4 h-4" />,
+  MessageSquare: <GitFork className="w-4 h-4" />,
+  KeyRound: <KeyRound className="w-4 h-4" />,
+  Activity: <Activity className="w-4 h-4" />,
+  Box: <Box className="w-4 h-4" />
 };
 
 type HandlePosition = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
@@ -44,6 +44,7 @@ export const Canvas: React.FC = () => {
     selectEdge,
     clearSelection,
     updateNodePosition,
+    updateNode,
     resizeNode,
     addNode,
     addEdge,
@@ -79,6 +80,24 @@ export const Canvas: React.FC = () => {
 
   // Context Menu
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null);
+
+  // Inline editing (double-click a card to write inside it)
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{ label: string; description: string; tech: string }>({ label: "", description: "", tech: "" });
+
+  const startEditing = (node: DiagramNode) => {
+    setEditingNodeId(node.id);
+    setEditDraft({ label: node.label || "", description: node.description || "", tech: (node as any).tech || "" });
+    selectNode(node.id, false);
+  };
+
+  const commitEditing = () => {
+    if (!editingNodeId) return;
+    updateNode(editingNodeId, { label: editDraft.label, description: editDraft.description, tech: editDraft.tech } as any);
+    setEditingNodeId(null);
+  };
+
+  const cancelEditing = () => setEditingNodeId(null);
 
   const { x: vpX, y: vpY, zoom } = document.viewport;
 
@@ -116,6 +135,10 @@ export const Canvas: React.FC = () => {
   // Background pointer down
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     setContextMenu(null);
+    // Commit any inline editing when clicking elsewhere
+    if (editingNodeId) {
+      commitEditing();
+    }
 
     // If Hand tool or middle mouse: start panning
     if (activeTool === "hand" || e.button === 1) {
@@ -339,6 +362,11 @@ export const Canvas: React.FC = () => {
 
   // Select node & start dragging
   const handleNodeMouseDown = (e: React.MouseEvent, node: DiagramNode) => {
+    // Don't start a drag when the user is typing inside the card
+    if (editingNodeId === node.id) {
+      e.stopPropagation();
+      return;
+    }
     e.stopPropagation();
 
     if (connectingNodeId) {
@@ -439,7 +467,7 @@ export const Canvas: React.FC = () => {
               refY="3.5"
               orient="auto"
             >
-              <polygon points="0 0, 10 3.5, 0 7" fill={theme === "light" ? "#4f46e5" : "#818cf8"} />
+              <polygon points="0 0, 10 3.5, 0 7" fill={theme === "light" ? "#787774" : "#9b9b9b"} />
             </marker>
             <marker
               id="arrowhead-selected"
@@ -449,7 +477,7 @@ export const Canvas: React.FC = () => {
               refY="3.5"
               orient="auto"
             >
-              <polygon points="0 0, 10 3.5, 0 7" fill="#ec4899" />
+              <polygon points="0 0, 10 3.5, 0 7" fill="hsl(var(--primary))" />
             </marker>
           </defs>
 
@@ -489,11 +517,29 @@ export const Canvas: React.FC = () => {
             }
 
             const isSelected = selectedEdgeId === edge.id;
+            const isConnectedToSelected = selectedNodeIds.length > 0 && 
+              (selectedNodeIds.includes(edge.source) || selectedNodeIds.includes(edge.target));
             const midX = (startX + endX) / 2;
             const midY = (startY + endY) / 2;
 
             const dx = Math.abs(endX - startX) * 0.5;
             const pathD = `M ${startX} ${startY} C ${startX + dx} ${startY}, ${endX - dx} ${endY}, ${endX} ${endY}`;
+
+            // Neon highlight for edges connected to selected nodes
+            const edgeStroke = isConnectedToSelected 
+              ? "hsl(var(--primary))"
+              : isSelected 
+                ? "hsl(var(--primary))"
+                : theme === "light" 
+                  ? "#a6a6a3" 
+                  : "#6b6b6b";
+            const edgeWidth = (isConnectedToSelected || isSelected) ? "3" : "1.8";
+            const edgeGlow = isConnectedToSelected 
+              ? "drop-shadow(0 0 8px hsl(var(--primary) / 0.8)) drop-shadow(0 0 16px hsl(var(--primary) / 0.5))"
+              : isSelected
+                ? "drop-shadow(0 0 6px hsl(var(--primary) / 0.6))"
+                : "none";
+            const markerEnd = (isConnectedToSelected || isSelected) ? "url(#arrowhead-selected)" : "url(#arrowhead)";
 
             return (
               <g
@@ -507,31 +553,32 @@ export const Canvas: React.FC = () => {
                 <path d={pathD} stroke="transparent" strokeWidth="24" fill="none" />
                 <path
                   d={pathD}
-                  stroke={isSelected ? "#ec4899" : theme === "light" ? "#4f46e5" : "#818cf8"}
-                  strokeWidth={isSelected ? "3" : "2"}
-                  strokeDasharray={edge.type === "dashed" ? "5,5" : undefined}
+                  stroke={edgeStroke}
+                  strokeWidth={edgeWidth}
+                  strokeLinecap="round"
+                  strokeDasharray={edge.type === "dashed" ? "6,5" : undefined}
                   fill="none"
-                  markerEnd={isSelected ? "url(#arrowhead-selected)" : "url(#arrowhead)"}
-                  className="transition-colors group-hover:stroke-indigo-400"
+                  markerEnd={markerEnd}
+                  style={{ filter: edgeGlow, transition: "filter 0.15s ease, stroke 0.15s ease" }}
                 />
                 {edge.label && (
                   <g transform={`translate(${midX}, ${midY})`}>
                     <rect
-                      x="-50"
-                      y="-11"
-                      width="100"
-                      height="22"
-                      rx="4"
-                      fill={theme === "light" ? "#ffffff" : "#1e2230"}
-                      stroke={isSelected ? "#ec4899" : theme === "light" ? "#d7dae0" : "#374151"}
-                      strokeWidth="1"
+                      x="-52"
+                      y="-12"
+                      width="104"
+                      height="24"
+                      rx="6"
+                      fill={theme === "light" ? "#ffffff" : "#202020"}
+                      stroke={isConnectedToSelected || isSelected ? "hsl(var(--primary))" : theme === "light" ? "#e9e9e8" : "rgba(255,255,255,0.14)"}
+                      strokeWidth={isConnectedToSelected || isSelected ? "2" : "1"}
+                      style={{ filter: isConnectedToSelected ? "drop-shadow(0 0 6px hsl(var(--primary) / 0.6))" : "none" }}
                     />
                     <text
                       textAnchor="middle"
                       dy="4"
-                      className={`text-[11px] font-mono tracking-tight select-none pointer-events-none ${
-                        theme === "light" ? "fill-slate-700" : "fill-gray-300"
-                      }`}
+                      className="text-[11px] font-mono font-medium tracking-tight select-none pointer-events-none"
+                      fill={theme === "light" ? "#37352f" : "#e8e7e4"}
                     >
                       {edge.label.length > 18 ? `${edge.label.slice(0, 16)}…` : edge.label}
                     </text>
@@ -547,6 +594,7 @@ export const Canvas: React.FC = () => {
           const isSelected = selectedNodeIds.includes(node.id);
           const isConnectingSource = connectingNodeId === node.id;
           const isResizingThis = resizingNodeId === node.id;
+          const isEditingThis = editingNodeId === node.id;
           const config = getNodeStyle(node.type);
           const icon = ICON_MAP[config.icon] || ICON_MAP.Server;
 
@@ -571,12 +619,17 @@ export const Canvas: React.FC = () => {
             <div
               key={node.id}
               onMouseDown={(e) => handleNodeMouseDown(e, node)}
-              className={`absolute pointer-events-auto transition-shadow group select-none shadow-md ${
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (!["freehand"].includes(node.type)) startEditing(node);
+              }}
+              title="Double-click to write inside"
+              className={`absolute pointer-events-auto select-none ${
                 isSelected
-                  ? "ring-2 ring-indigo-500 shadow-indigo-500/20"
+                  ? "shadow-glow"
                   : isConnectingSource
-                  ? "ring-2 ring-amber-400 animate-pulse"
-                  : "hover:shadow-lg"
+                  ? "shadow-glow animate-pulse"
+                  : "shadow-card hover:shadow-glow"
               }`}
               style={{
                 left: `${node.position.x}px`,
@@ -587,83 +640,161 @@ export const Canvas: React.FC = () => {
                   node.type === "ellipse" || node.type === "circle"
                     ? "9999px"
                     : node.type === "rounded_rectangle"
-                    ? `${node.style?.borderRadius || 16}px`
+                    ? `${node.style?.borderRadius || 18}px`
                     : node.type === "text"
-                    ? "0px"
-                    : `${node.style?.borderRadius || 12}px`,
+                    ? "12px"
+                    : `${node.style?.borderRadius ?? 16}px`,
                 backgroundColor:
                   node.style?.backgroundColor ||
                   (isArchitecture
                     ? theme === "light"
-                      ? "rgba(255, 255, 255, 0.95)"
-                      : config.bgColor || "rgba(15, 23, 42, 0.85)"
+                      ? "#ffffff"
+                      : "#202020"
                     : node.type === "text"
                     ? "transparent"
                     : theme === "light"
-                    ? "rgba(255, 255, 255, 0.9)"
-                    : "rgba(30, 41, 59, 0.75)"),
+                    ? "#ffffff"
+                    : "#202020"),
                 borderWidth: node.type === "text" ? 0 : `${node.style?.borderWidth || 1}px`,
+                borderStyle: "solid",
                 borderColor:
                   node.style?.borderColor ||
                   (isSelected
-                    ? "#6366f1"
+                    ? "hsl(var(--primary))"
                     : theme === "light"
-                    ? "#d7dae0"
-                    : "rgba(255, 255, 255, 0.12)"),
+                    ? "#e9e9e8"
+                    : "rgba(255,255,255,0.13)"),
                 opacity: (node.style?.opacity ?? 100) / 100,
-                transform: node.type === "diamond" ? "rotate(45deg)" : undefined
+                transform: node.type === "diamond" ? "rotate(45deg)" : undefined,
+                transition: draggingNodeId === node.id ? "none" : "box-shadow .2s ease, border-color .2s ease",
+                overflow: "visible",
               }}
             >
               {/* Internal Content (Counter-rotated if diamond) */}
               <div
-                className={`w-full h-full flex flex-col overflow-hidden ${
+                className={`w-full h-full flex flex-col overflow-hidden group ${
                   node.type === "diamond" ? "-rotate-45 p-3 flex items-center justify-center" : ""
                 }`}
+                style={{
+                  borderRadius: "inherit",
+                }}
               >
                 {isArchitecture ? (
                   <>
-                    {/* Header Bar */}
+                    {/* Header Bar — Notion calm: neutral, tech badge never truncates */}
                     <div
-                      className={`flex items-center justify-between px-3 py-1.5 border-b shrink-0 ${
-                        theme === "light"
-                          ? "bg-slate-100/80 border-slate-200"
-                          : "bg-black/20 border-white/5"
-                      }`}
+                      className="flex items-center gap-1.5 px-2.5 py-[7px] shrink-0"
+                      style={{
+                        background: theme === "light" ? "#f7f7f5" : "rgba(255,255,255,0.03)",
+                        borderBottom: `1px solid ${theme === "light" ? "#e9e9e8" : "rgba(255,255,255,0.08)"}`,
+                      }}
                     >
-                      <div className="flex items-center gap-1.5 overflow-hidden">
-                        <div className="p-0.5 rounded bg-white/10 shrink-0">{icon}</div>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+                        <div
+                          className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: config.bgColor, color: config.borderColor }}
+                        >
+                          {icon}
+                        </div>
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground truncate min-w-0">
                           {config.label}
                         </span>
                       </div>
-                      {node.tech && (
+                      {isEditingThis ? (
+                        <input
+                          autoFocus={false}
+                          value={editDraft.tech}
+                          onChange={(e) => setEditDraft((d) => ({ ...d, tech: e.target.value }))}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === "Enter") commitEditing();
+                            if (e.key === "Escape") cancelEditing();
+                          }}
+                          placeholder="tech…"
+                          title="Tech label — Enter to save"
+                          className="shrink-0 w-[110px] text-[10px] font-mono px-1.5 py-0.5 rounded-md border border-primary bg-transparent outline-none"
+                        />
+                      ) : node.tech ? (
                         <span
-                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded truncate max-w-[80px] ${
-                            theme === "light"
-                              ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                              : "bg-indigo-950/70 text-indigo-300 border border-indigo-500/30"
-                          }`}
+                          onDoubleClick={(e) => { e.stopPropagation(); startEditing(node); }}
+                          title={node.tech}
+                          className="shrink-0 whitespace-nowrap text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-md border cursor-text transition"
+                          style={{
+                            color: config.borderColor,
+                            backgroundColor: config.bgColor,
+                            borderColor: `${config.borderColor}33`,
+                          }}
                         >
                           {node.tech}
                         </span>
-                      )}
+                      ) : null}
                     </div>
 
-                    {/* Body text */}
-                    <div className="p-3 flex-1 flex flex-col justify-center overflow-hidden">
-                      <h4
-                        className="font-medium tracking-tight leading-tight truncate"
-                        style={{
-                          fontSize: `${node.style?.fontSize || 13}px`,
-                          color: node.style?.textColor || (theme === "light" ? "#20242A" : "#ffffff")
-                        }}
-                      >
-                        {node.label}
-                      </h4>
-                      {node.description && (
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mt-0.5">
-                          {node.description}
-                        </p>
+                    {/* Body text — double-click to edit inline */}
+                    <div
+                      className="px-3 py-2.5 flex-1 flex flex-col justify-center overflow-hidden cursor-text"
+                      onDoubleClick={(e) => { e.stopPropagation(); startEditing(node); }}
+                    >
+                      {isEditingThis ? (
+                        <div className="flex flex-col gap-1.5 h-full justify-center" onMouseDown={(e) => e.stopPropagation()}>
+                          <input
+                            autoFocus
+                            value={editDraft.label}
+                            onChange={(e) => setEditDraft((d) => ({ ...d, label: e.target.value }))}
+                            onBlur={commitEditing}
+                            onKeyDown={(e) => {
+                              e.stopPropagation();
+                              if (e.key === "Enter") commitEditing();
+                              if (e.key === "Escape") cancelEditing();
+                            }}
+                            placeholder="Component name…"
+                            className="w-full bg-transparent font-bold tracking-tight leading-tight outline-none border-b border-primary/60 pb-0.5"
+                            style={{ fontSize: `${node.style?.fontSize || 13.5}px` }}
+                          />
+                          <textarea
+                            rows={2}
+                            value={editDraft.description}
+                            onChange={(e) => setEditDraft((d) => ({ ...d, description: e.target.value }))}
+                            onBlur={commitEditing}
+                            onKeyDown={(e) => {
+                              e.stopPropagation();
+                              if (e.key === "Escape") cancelEditing();
+                              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commitEditing();
+                            }}
+                            placeholder="Write a note inside… (Esc to cancel)"
+                            className="w-full bg-transparent text-[11px] leading-snug outline-none resize-none text-muted-foreground"
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <h4
+                            className="font-bold tracking-tight leading-tight break-words"
+                            style={{
+                              fontSize: `${node.style?.fontSize || 14}px`,
+                              color: node.style?.textColor || (theme === "light" ? "#17171f" : "#ffffff"),
+                              display: "-webkit-box",
+                              WebkitLineClamp: 3,
+                              WebkitBoxOrient: "vertical" as any,
+                              overflow: "hidden",
+                            }}
+                            title={`${node.label}${node.description ? " — " + node.description : ""}\n\nDouble-click to edit`}
+                          >
+                            {node.label}
+                          </h4>
+                          {node.description ? (
+                            <p
+                              className="text-[11px] text-muted-foreground leading-snug mt-0.5 break-words"
+                              style={{ display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as any, overflow: "hidden" }}
+                            >
+                              {node.description}
+                            </p>
+                          ) : (
+                            <p className="text-[10.5px] mt-1 opacity-0 group-hover:opacity-60 transition-opacity italic text-muted-foreground select-none">
+                              Double-click to write…
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                   </>
@@ -680,17 +811,44 @@ export const Canvas: React.FC = () => {
                     />
                   </svg>
                 ) : (
-                  /* Basic Shapes (Rectangle, Ellipse, Diamond, Text) */
-                  <div className={`w-full h-full p-2 flex flex-col ${textAlignClass}`}>
-                    <span
-                      className="font-medium leading-snug break-words"
-                      style={{
-                        fontSize: `${node.style?.fontSize || 14}px`,
-                        color: node.style?.textColor || (theme === "light" ? "#20242A" : "#f1f5f9")
-                      }}
-                    >
-                      {node.label}
-                    </span>
+                  /* Basic Shapes (Rectangle, Ellipse, Diamond, Text) — also editable */
+                  <div
+                    className={`w-full h-full p-2 flex flex-col ${textAlignClass} cursor-text`}
+                    onDoubleClick={(e) => { e.stopPropagation(); startEditing(node); }}
+                    title="Double-click to write inside"
+                  >
+                    {isEditingThis ? (
+                      <textarea
+                        autoFocus
+                        rows={3}
+                        value={editDraft.label}
+                        onChange={(e) => setEditDraft((d) => ({ ...d, label: e.target.value }))}
+                        onBlur={commitEditing}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === "Escape") cancelEditing();
+                          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commitEditing();
+                        }}
+                        placeholder="Write here…"
+                        className="w-full h-full bg-transparent outline-none resize-none border-b border-primary/60"
+                        style={{
+                          fontSize: `${node.style?.fontSize || 14}px`,
+                          color: node.style?.textColor || (theme === "light" ? "#20242A" : "#f1f5f9"),
+                          textAlign: (node.style?.textAlign as any) || "center",
+                        }}
+                      />
+                    ) : (
+                      <span
+                        className="font-medium leading-snug break-words"
+                        style={{
+                          fontSize: `${node.style?.fontSize || 14}px`,
+                          color: node.style?.textColor || (theme === "light" ? "#20242A" : "#f1f5f9")
+                        }}
+                      >
+                        {node.label || <span className="opacity-40 italic text-[12px]">Double-click to write…</span>}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -701,14 +859,14 @@ export const Canvas: React.FC = () => {
                   e.stopPropagation();
                   setConnectingNodeId(isConnectingSource ? null : node.id, "right");
                 }}
-                className={`absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border bg-white dark:bg-slate-900 flex items-center justify-center cursor-crosshair opacity-0 group-hover:opacity-100 transition-opacity hover:scale-125 z-20 ${
+                className={`absolute -right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 bg-card flex items-center justify-center cursor-crosshair opacity-0 group-hover:opacity-100 transition-all hover:scale-125 z-20 shadow-card ${
                   isConnectingSource && connectingAnchor === "right"
-                    ? "border-amber-400 bg-amber-400 opacity-100"
-                    : "border-indigo-500 text-indigo-500"
+                    ? "border-amber-400 opacity-100"
+                    : "border-primary"
                 }`}
-                title="Connect right"
+                title="Drag connection from here — or click then click destination"
               >
-                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
               </div>
 
               <div
@@ -716,10 +874,30 @@ export const Canvas: React.FC = () => {
                   e.stopPropagation();
                   setConnectingNodeId(isConnectingSource ? null : node.id, "bottom");
                 }}
-                className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 flex items-center justify-center cursor-crosshair opacity-0 group-hover:opacity-100 transition-opacity hover:scale-125 z-20"
-                title="Connect bottom"
+                className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full border-2 border-primary bg-card flex items-center justify-center cursor-crosshair opacity-0 group-hover:opacity-100 transition-all hover:scale-125 z-20 shadow-card"
+                title="Connect from bottom"
               >
-                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+              </div>
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConnectingNodeId(isConnectingSource ? null : node.id, "left");
+                }}
+                className="absolute -left-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-primary bg-card items-center justify-center cursor-crosshair opacity-0 group-hover:opacity-100 transition-all hover:scale-125 z-20 shadow-card hidden group-hover:flex"
+                title="Connect from left"
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+              </div>
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConnectingNodeId(isConnectingSource ? null : node.id, "top");
+                }}
+                className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full border-2 border-primary bg-card items-center justify-center cursor-crosshair opacity-0 group-hover:opacity-100 transition-all hover:scale-125 z-20 shadow-card hidden group-hover:flex"
+                title="Connect from top"
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
               </div>
 
               {/* Universal 8-Point Resize Handles (Visible when selected) */}
@@ -773,7 +951,7 @@ export const Canvas: React.FC = () => {
         {/* In-progress Drag-to-Draw Shape Ghost */}
         {isDrawingShape && drawStart && drawCurrent && (
           <div
-            className="absolute pointer-events-none border-2 border-dashed border-indigo-500 bg-indigo-500/10 z-30"
+            className="absolute pointer-events-none border-2 border-dashed border-primary bg-primary/10 z-30 rounded-2xl"
             style={{
               left: `${Math.min(drawStart.x, drawCurrent.x)}px`,
               top: `${Math.min(drawStart.y, drawCurrent.y)}px`,
@@ -783,8 +961,8 @@ export const Canvas: React.FC = () => {
                 activeTool === "ellipse"
                   ? "9999px"
                   : activeTool === "rounded_rectangle"
-                  ? "16px"
-                  : "6px"
+                  ? "18px"
+                  : "12px"
             }}
           />
         )}
@@ -792,11 +970,12 @@ export const Canvas: React.FC = () => {
 
       {/* Floating Status Indicator if connecting */}
       {connectingNodeId && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-amber-500 text-black font-medium text-xs flex items-center gap-2 shadow-xl z-30 backdrop-blur-md">
-          <span>Click destination node to establish connection</span>
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 pl-4 pr-2 py-1.5 rounded-full glass border border-primary/30 shadow-glow font-medium text-[12px] flex items-center gap-2 z-30 animate-pop-in">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse-dot shrink-0" />
+          <span>Click another component to connect them</span>
           <button
             onClick={() => setConnectingNodeId(null)}
-            className="text-[10px] px-2 py-0.5 bg-black text-white rounded-full font-bold ml-1 hover:bg-slate-800"
+            className="text-[11px] px-2.5 py-1 bg-muted hover:bg-accent rounded-full font-bold ml-1 transition"
           >
             Cancel
           </button>
@@ -806,7 +985,7 @@ export const Canvas: React.FC = () => {
       {/* Context Menu */}
       {contextMenu && (
         <div
-          className="fixed z-50 bg-white dark:bg-[#0f131a] border border-slate-200 dark:border-white/10 rounded-xl p-1.5 shadow-2xl text-xs space-y-1 min-w-[170px]"
+          className="fixed z-50 bg-popover border border-border rounded-2xl p-1.5 shadow-card text-[12.5px] space-y-0.5 min-w-[190px] animate-pop-in"
           style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -815,38 +994,38 @@ export const Canvas: React.FC = () => {
               duplicateSelected();
               setContextMenu(null);
             }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200"
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-muted font-medium transition"
           >
-            <Copy className="w-3.5 h-3.5 text-indigo-500" /> Duplicate (Ctrl+D)
+            <Copy className="w-3.5 h-3.5 text-primary" /> Duplicate <kbd className="ml-auto text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">⌘D</kbd>
           </button>
-          <div className="h-px bg-slate-200 dark:bg-white/10 my-1" />
+          <div className="h-px bg-border mx-2" />
           <button
             onClick={() => {
               updateZIndex(contextMenu.nodeId, "front");
               setContextMenu(null);
             }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200"
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-muted font-medium transition"
           >
-            <ArrowUp className="w-3.5 h-3.5" /> Bring to Front
+            <ArrowUp className="w-3.5 h-3.5 text-muted-foreground" /> Bring to front
           </button>
           <button
             onClick={() => {
               updateZIndex(contextMenu.nodeId, "back");
               setContextMenu(null);
             }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200"
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-muted font-medium transition"
           >
-            <ArrowDown className="w-3.5 h-3.5" /> Send to Back
+            <ArrowDown className="w-3.5 h-3.5 text-muted-foreground" /> Send to back
           </button>
-          <div className="h-px bg-slate-200 dark:bg-white/10 my-1" />
+          <div className="h-px bg-border mx-2" />
           <button
             onClick={() => {
               deleteSelected();
               setContextMenu(null);
             }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400"
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-red-500/10 text-red-500 font-semibold transition"
           >
-            <Trash2 className="w-3.5 h-3.5" /> Delete (Backspace)
+            <Trash2 className="w-3.5 h-3.5" /> Delete <kbd className="ml-auto text-[10px] font-mono opacity-70 bg-red-500/10 px-1.5 py-0.5 rounded">⌫</kbd>
           </button>
         </div>
       )}

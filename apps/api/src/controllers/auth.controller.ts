@@ -62,7 +62,7 @@ export class AuthController {
     try {
       const validated = LoginUserSchema.parse(req.body);
       const user = await User.findOne({ email: validated.email });
-      if (!user) {
+      if (!user || !user.passwordHash) {
         res.status(401).json({
           success: false,
           error: { code: "INVALID_CREDENTIALS", message: "Invalid email or password" }
@@ -114,6 +114,53 @@ export class AuthController {
     res.json({ success: true, data: { message: "Logged out successfully" } });
   }
 
+  static async sync(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { clerkId, email, name, avatar } = req.body;
+      if (!clerkId && !email) {
+        res.status(400).json({
+          success: false,
+          error: { code: "BAD_REQUEST", message: "clerkId or email is required" }
+        });
+        return;
+      }
+
+      const conditions: any[] = [];
+      if (clerkId) conditions.push({ clerkId });
+      if (email) conditions.push({ email: email.toLowerCase() });
+
+      let user = await User.findOne({ $or: conditions });
+      if (user) {
+        if (clerkId && !user.clerkId) user.clerkId = clerkId;
+        if (name && (!user.name || user.name === "Anonymous")) user.name = name;
+        if (avatar && !user.avatar) user.avatar = avatar;
+        await user.save();
+      } else {
+        user = await User.create({
+          clerkId,
+          email: (email || `${clerkId}@clerk.user`).toLowerCase(),
+          name: name || (email ? email.split("@")[0] : "User"),
+          avatar: avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name || "User")}`
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          user: {
+            id: user._id,
+            clerkId: user.clerkId,
+            name: user.name,
+            email: user.email,
+            avatar: user.avatar
+          }
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async me(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (!req.user) {
@@ -130,6 +177,7 @@ export class AuthController {
         data: {
           user: {
             id: user._id,
+            clerkId: user.clerkId,
             name: user.name,
             email: user.email,
             avatar: user.avatar
@@ -141,3 +189,4 @@ export class AuthController {
     }
   }
 }
+
